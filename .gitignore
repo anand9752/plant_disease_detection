@@ -66,6 +66,8 @@ trained_model/*.h5
 # Include compressed models in repository (deployment ready)
 !compressed_models/
 !compressed_models/*.tflite
+!compressed_models/*.h5
+!compressed_models/optimized_model.h5
 
 # Environment variables
 .env
