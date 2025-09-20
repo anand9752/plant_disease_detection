@@ -133,9 +133,26 @@ class ModelManager:
             return None
     
     def _predict_tflite(self, img_array):
-        """Predict using TFLite interpreter"""
+        """Predict using TFLite interpreter with proper data type handling"""
         input_details = self.interpreter.get_input_details()
         output_details = self.interpreter.get_output_details()
+        
+        # Debug info for deployment troubleshooting
+        input_shape = input_details[0]['shape']
+        input_dtype = input_details[0]['dtype']
+        
+        # Ensure correct input shape and data type
+        if img_array.shape != tuple(input_shape):
+            st.warning(f"Input shape mismatch: {img_array.shape} vs expected {input_shape}")
+        
+        # Convert to the exact data type expected by the model
+        if input_dtype == np.float32:
+            img_array = img_array.astype(np.float32)
+        elif input_dtype == np.uint8:
+            # Some TFLite models expect uint8 input (0-255 range)
+            img_array = (img_array * 255.0).astype(np.uint8)
+        else:
+            img_array = img_array.astype(input_dtype)
         
         # Set input tensor
         self.interpreter.set_tensor(input_details[0]['index'], img_array)
@@ -145,6 +162,12 @@ class ModelManager:
         
         # Get output
         output_data = self.interpreter.get_tensor(output_details[0]['index'])
+        
+        # Debug: Log prediction array (first 5 values for brevity)
+        if len(output_data[0]) > 0:
+            st.info(f"Model predictions (first 5): {output_data[0][:5]}")
+            st.info(f"Predicted class index: {np.argmax(output_data[0])}")
+        
         return output_data[0]
     
     def _predict_keras(self, img_array):
@@ -162,8 +185,11 @@ def load_model_manager():
     return None
 
 def preprocess_image(image):
-    """Preprocess image for model prediction"""
+    """Preprocess image for model prediction with enhanced validation"""
     try:
+        # Debug: Log original image info
+        st.info(f"Original image: mode={image.mode}, size={image.size}")
+        
         # Resize image to model input size
         image = image.resize((224, 224))
         
@@ -174,11 +200,19 @@ def preprocess_image(image):
         # Convert to numpy array
         img_array = np.array(image)
         
+        # Debug: Log array info before preprocessing
+        st.info(f"Image array shape: {img_array.shape}, dtype: {img_array.dtype}")
+        st.info(f"Pixel value range: [{img_array.min()}, {img_array.max()}]")
+        
         # Add batch dimension
         img_array = np.expand_dims(img_array, axis=0)
         
-        # Normalize pixel values
+        # Normalize pixel values to [0,1] range
         img_array = img_array.astype('float32') / 255.0
+        
+        # Debug: Log final preprocessing result
+        st.info(f"Final array shape: {img_array.shape}, dtype: {img_array.dtype}")
+        st.info(f"Final pixel range: [{img_array.min():.3f}, {img_array.max():.3f}]")
         
         return img_array
         
@@ -187,15 +221,37 @@ def preprocess_image(image):
         return None
 
 def predict_disease(model_manager, img_array, class_indices):
-    """Make prediction using the loaded model"""
+    """Make prediction using the loaded model with enhanced debugging"""
     try:
         predictions = model_manager.predict(img_array)
         if predictions is None:
             return None, 0, None
         
+        # Debug: Log full prediction array for analysis
+        st.info(f"Full prediction array shape: {predictions.shape}")
+        st.info(f"Prediction array sum: {np.sum(predictions):.6f}")
+        
+        # Ensure predictions are valid probabilities
+        if np.sum(predictions) == 0:
+            st.error("Model returned all zero predictions - this indicates a model loading issue")
+            return None, 0, None
+        
+        # Check if predictions contain NaN or infinite values
+        if np.any(np.isnan(predictions)) or np.any(np.isinf(predictions)):
+            st.error("Model returned invalid predictions (NaN or Inf)")
+            return None, 0, None
+        
         # Get predicted class
         predicted_class_index = np.argmax(predictions)
         confidence = float(predictions[predicted_class_index])
+        
+        # Debug: Show top 3 predictions
+        top_3_indices = np.argsort(predictions)[-3:][::-1]
+        st.info("Top 3 predictions:")
+        for i, idx in enumerate(top_3_indices):
+            class_name = class_indices.get(str(idx), f"Class_{idx}")
+            prob = predictions[idx]
+            st.info(f"{i+1}. {class_name}: {prob:.6f}")
         
         # Get class name
         predicted_class = class_indices.get(str(predicted_class_index), "Unknown")
