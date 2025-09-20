@@ -1,9 +1,0 @@
-# System packages for Streamlit Cloud
-# Add any system-level dependencies here if needed
-
-# For image processing (usually included by default)
-# libgl1-mesa-glx
-# libglib2.0-0
-
-# For TensorFlow (usually included by default)
-# libgomp1
