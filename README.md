@@ -295,24 +295,18 @@ This application is optimized for Streamlit Cloud deployment with the following 
 4. **Select this repository** and set main file to `app.py`
 5. **Click Deploy!** 
 
-### Model Hosting Options
+### Model Hosting Strategy
 
-Due to file size limitations, choose one of these model hosting strategies:
+**✅ SIMPLIFIED DEPLOYMENT**: The compressed TFLite model (45.6MB) is included directly in this repository for seamless deployment.
 
-#### Option 1: GitHub Releases (Recommended)
-- Upload compressed model to GitHub Releases
-- Automatic download in the app
-- Version controlled and accessible
+**Model Priority:**
+1. **🚀 Compressed TFLite Model** - Included in repository (recommended)
+2. **⚠️ Original H5 Model** - Download separately if needed
 
-#### Option 2: External Hosting
-- Host models on cloud storage (AWS S3, Google Drive)
-- Update download URLs in the app
-- Reliable and scalable
-
-#### Option 3: Include in Repository
-- For models under 100MB
-- Direct inclusion in the repository
-- Fastest loading but limited by file size
+**Benefits:**
+- **Zero Setup**: Models work out of the box
+- **Fast Deployment**: No additional configuration required  
+- **Optimal Performance**: 91% size reduction with maintained accuracy
 
 For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md).
 

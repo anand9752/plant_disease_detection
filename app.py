@@ -5,7 +5,6 @@ import json
 import os
 from PIL import Image
 import requests
-import gdown
 from io import BytesIO
 
 # Set page configuration
@@ -16,9 +15,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Constants
-MODEL_URL = "https://drive.google.com/uc?id=1rKh-IElSdHTqax7XdfSdZTn-r8T_qWPf"
-COMPRESSED_MODEL_URL = "https://github.com/your-username/your-repo/releases/download/v1.0/dynamic_quantized_model.tflite"
+# Working directory for model files
+working_dir = os.path.dirname(os.path.abspath(__file__))
 
 @st.cache_data
 def load_class_indices():
@@ -40,82 +38,129 @@ def load_disease_database():
         st.warning("Disease information database not found. Basic functionality will be available.")
         return {}
 
-@st.cache_data
-def download_compressed_model():
-    """Download the compressed TFLite model"""
-    model_path = "compressed_models/dynamic_quantized_model.tflite"
+class ModelManager:
+    """
+    Manages loading and inference for different model formats
+    """
+    def __init__(self):
+        self.model = None
+        self.model_type = None
+        self.model_info = {}
+        self.interpreter = None
     
-    # Create directory if it doesn't exist
-    os.makedirs("compressed_models", exist_ok=True)
-    
-    # Check if model already exists
-    if os.path.exists(model_path):
-        return model_path
-    
-    try:
-        st.info("Downloading compressed model for first-time use...")
+    def find_best_model(self):
+        """
+        Find the best available model in order of preference:
+        1. Compressed models (TFLite, pruned, optimized) - PRIORITY for deployment
+        2. Original model (fallback only)
+        """
+        model_search_order = [
+            # Compressed models (preferred for deployment)
+            ("compressed_models/dynamic_quantized_model.tflite", "TensorFlow Lite (Dynamic)", "tflite"),
+            ("compressed_models/quantized_model.tflite", "TensorFlow Lite (INT8)", "tflite"),
+            ("compressed_models/optimized_model.h5", "Optimized Keras", "keras"),
+            ("compressed_models/pruned_model.h5", "Pruned Keras", "keras"),
+            
+            # Original model (fallback - not recommended for deployment)
+            ("trained_model/plant_disease_prediction_model.h5", "Original Keras", "keras")
+        ]
         
-        # Try to download from GitHub releases or use fallback
-        with st.spinner("Downloading model... This may take a moment."):
-            # You can replace this with your actual model download logic
-            # For demo purposes, we'll assume the model is already available
-            if not os.path.exists(model_path):
-                st.error("""
-                Model file not found. Please ensure the compressed model is available.
-                
-                For deployment, you can:
-                1. Include the model in your GitHub repository (if <100MB)
-                2. Use GitHub Releases for larger models
-                3. Use external hosting services
-                """)
-                return None
+        for model_path, model_name, model_format in model_search_order:
+            full_path = os.path.join(working_dir, model_path)
+            if os.path.exists(full_path):
+                file_size = os.path.getsize(full_path) / (1024*1024)  # Size in MB
+                return {
+                    'path': full_path,
+                    'name': model_name,
+                    'format': model_format,
+                    'size_mb': file_size,
+                    'relative_path': model_path
+                }
         
-        return model_path
-        
-    except Exception as e:
-        st.error(f"Error downloading model: {str(e)}")
         return None
+    
+    def load_model(self):
+        """Load the best available model"""
+        try:
+            best_model = self.find_best_model()
+            if not best_model:
+                st.error("No model files found. Please ensure model files are available.")
+                return False
+            
+            self.model_info = best_model
+            
+            if best_model['format'] == 'tflite':
+                return self._load_tflite_model(best_model['path'])
+            else:
+                return self._load_keras_model(best_model['path'])
+                
+        except Exception as e:
+            st.error(f"Error loading model: {str(e)}")
+            return False
+    
+    def _load_tflite_model(self, model_path):
+        """Load TensorFlow Lite model"""
+        try:
+            self.interpreter = tf.lite.Interpreter(model_path=model_path)
+            self.interpreter.allocate_tensors()
+            self.model_type = "tflite"
+            return True
+        except Exception as e:
+            st.error(f"Error loading TFLite model: {str(e)}")
+            return False
+    
+    def _load_keras_model(self, model_path):
+        """Load Keras H5 model"""
+        try:
+            self.model = tf.keras.models.load_model(model_path)
+            self.model_type = "keras"
+            return True
+        except Exception as e:
+            st.error(f"Error loading Keras model: {str(e)}")
+            return False
+    
+    def predict(self, img_array):
+        """Make prediction using the loaded model"""
+        try:
+            if self.model_type == "tflite":
+                return self._predict_tflite(img_array)
+            elif self.model_type == "keras":
+                return self._predict_keras(img_array)
+            else:
+                raise Exception("No model loaded")
+                
+        except Exception as e:
+            st.error(f"Error during prediction: {str(e)}")
+            return None
+    
+    def _predict_tflite(self, img_array):
+        """Predict using TFLite interpreter"""
+        input_details = self.interpreter.get_input_details()
+        output_details = self.interpreter.get_output_details()
+        
+        # Set input tensor
+        self.interpreter.set_tensor(input_details[0]['index'], img_array)
+        
+        # Run inference
+        self.interpreter.invoke()
+        
+        # Get output
+        output_data = self.interpreter.get_tensor(output_details[0]['index'])
+        return output_data[0]
+    
+    def _predict_keras(self, img_array):
+        """Predict using Keras model"""
+        predictions = self.model.predict(img_array, verbose=0)
+        return predictions[0]
 
 @st.cache_resource
-def load_model():
-    """Load the TensorFlow Lite model with caching"""
-    try:
-        # Try to load compressed model first
-        model_path = download_compressed_model()
-        
-        if model_path and os.path.exists(model_path):
-            # Load TFLite model
-            interpreter = tf.lite.Interpreter(model_path=model_path)
-            interpreter.allocate_tensors()
-            
-            # Get input and output details
-            input_details = interpreter.get_input_details()
-            output_details = interpreter.get_output_details()
-            
-            return {
-                'interpreter': interpreter,
-                'input_details': input_details,
-                'output_details': output_details,
-                'model_type': 'tflite',
-                'model_path': model_path
-            }
-        
-        # Fallback to original model if compressed not available
-        original_model_path = "trained_model/plant_disease_prediction_model.h5"
-        if os.path.exists(original_model_path):
-            model = tf.keras.models.load_model(original_model_path)
-            return {
-                'model': model,
-                'model_type': 'keras',
-                'model_path': original_model_path
-            }
-        
-        st.error("No model files found. Please ensure model files are available.")
-        return None
-        
-    except Exception as e:
-        st.error(f"Error loading model: {str(e)}")
-        return None
+def load_model_manager():
+    """Load and cache the model manager"""
+    manager = ModelManager()
+    success = manager.load_model()
+    if success:
+        return manager
+    return None
 
 def preprocess_image(image):
     """Preprocess image for model prediction"""
@@ -142,37 +187,21 @@ def preprocess_image(image):
         st.error(f"Error preprocessing image: {str(e)}")
         return None
 
-def predict_disease(model_info, img_array, class_indices):
+def predict_disease(model_manager, img_array, class_indices):
     """Make prediction using the loaded model"""
     try:
-        if model_info['model_type'] == 'tflite':
-            # TFLite inference
-            interpreter = model_info['interpreter']
-            input_details = model_info['input_details']
-            output_details = model_info['output_details']
-            
-            # Set input tensor
-            interpreter.set_tensor(input_details[0]['index'], img_array)
-            
-            # Run inference
-            interpreter.invoke()
-            
-            # Get output
-            predictions = interpreter.get_tensor(output_details[0]['index'])
-            
-        else:
-            # Keras model inference
-            model = model_info['model']
-            predictions = model.predict(img_array, verbose=0)
+        predictions = model_manager.predict(img_array)
+        if predictions is None:
+            return None, 0, None
         
         # Get predicted class
-        predicted_class_index = np.argmax(predictions[0])
-        confidence = float(predictions[0][predicted_class_index])
+        predicted_class_index = np.argmax(predictions)
+        confidence = float(predictions[predicted_class_index])
         
         # Get class name
         predicted_class = class_indices.get(str(predicted_class_index), "Unknown")
         
-        return predicted_class, confidence, predictions[0]
+        return predicted_class, confidence, predictions
         
     except Exception as e:
         st.error(f"Error during prediction: {str(e)}")
@@ -362,24 +391,31 @@ def main():
     
     # Load model
     with st.spinner("Loading AI model..."):
-        model_info = load_model()
+        model_manager = load_model_manager()
     
-    if not model_info:
+    if not model_manager:
         st.error("Failed to load model. Please check the setup.")
         st.stop()
     
     # Display model information
     with st.sidebar:
         st.header("🤖 Model Information")
+        model_info = model_manager.model_info
         st.info(f"""
-        **Model Type:** {model_info['model_type'].upper()}
+        **Model Type:** {model_info['name']}
         
-        **Model Path:** {os.path.basename(model_info['model_path'])}
+        **Format:** {model_info['format'].upper()}
+        
+        **Size:** {model_info['size_mb']:.1f} MB
         
         **Status:** ✅ Loaded Successfully
         
         **Classes:** {len(class_indices)} diseases
         """)
+        
+        # Show compression info if using compressed model
+        if 'compressed' in model_info['relative_path'].lower() or 'tflite' in model_info['format']:
+            st.success("🚀 Using Compressed Model - Deployment Optimized!")
         
         st.header("📊 Quick Stats")
         st.metric("Supported Crops", "14 types")
@@ -413,7 +449,7 @@ def main():
                 
                 if img_array is not None:
                     predicted_class, confidence, predictions = predict_disease(
-                        model_info, img_array, class_indices
+                        model_manager, img_array, class_indices
                     )
                     
                     if predicted_class:

@@ -59,9 +59,13 @@ Thumbs.db
 *.tmp
 *.temp
 
-# Large files (use Git LFS if needed)
-*.h5
-*.tflite
+# Large model files - exclude original models, include compressed ones
+trained_model/*.h5
+!trained_model/model.txt
+
+# Include compressed models in repository (deployment ready)
+!compressed_models/
+!compressed_models/*.tflite
 
 # Environment variables
 .env

@@ -5,7 +5,3 @@ tensorflow==2.15.0
 
 # Image processing and utilities
 Pillow==10.0.1
-requests==2.31.0
-
-# For model download and file handling
-gdown==4.7.1
