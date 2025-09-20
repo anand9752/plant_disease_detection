@@ -4,7 +4,6 @@ import numpy as np
 import json
 import os
 from PIL import Image
-import requests
 from io import BytesIO
 
 # Set page configuration
