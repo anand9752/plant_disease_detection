@@ -50,19 +50,22 @@ class ModelManager:
     def find_best_model(self):
         """
         Find the best available model in order of preference:
-        1. Compressed models (TFLite, pruned, optimized) - PRIORITY for deployment
-        2. Original model (fallback only)
+        1. Optimized Keras model (PRIMARY CHOICE - 182MB)
+        2. Other compressed models (fallback options)
+        3. Original model (last resort)
         
         Now includes model validation to avoid corrupted models
         """
         model_search_order = [
-            # Compressed models (preferred for deployment)
+            # PRIMARY: Optimized Keras model (best performance, manageable size)
+            ("compressed_models/optimized_model.h5", "Optimized Keras (Primary)", "keras"),
+            
+            # SECONDARY: Other compressed models (fallback)
+            ("compressed_models/pruned_model.h5", "Pruned Keras", "keras"),
             ("compressed_models/dynamic_quantized_model.tflite", "TensorFlow Lite (Dynamic)", "tflite"),
             ("compressed_models/quantized_model.tflite", "TensorFlow Lite (INT8)", "tflite"),
-            ("compressed_models/optimized_model.h5", "Optimized Keras", "keras"),
-            ("compressed_models/pruned_model.h5", "Pruned Keras", "keras"),
             
-            # Original model (fallback - not recommended for deployment)
+            # LAST RESORT: Original model (if available)
             ("trained_model/plant_disease_prediction_model.h5", "Original Keras", "keras")
         ]
         
@@ -76,7 +79,7 @@ class ModelManager:
                     st.warning(f"Model {model_name} seems too small ({file_size:.1f}MB), skipping...")
                     continue
                 
-                st.info(f"Found model: {model_name} ({file_size:.1f}MB)")
+                st.info(f"✅ Found model: {model_name} ({file_size:.1f}MB)")
                 return {
                     'path': full_path,
                     'name': model_name,
